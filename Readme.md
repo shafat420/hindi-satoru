@@ -1,316 +1,170 @@
-const express = require('express');
-const axios = require('axios');
-const router = express.Router();
+# Anime API
 
-const BASE_URL = 'https://satoru-flame.vercel.app';
+A RESTful API service that provides anime information, episodes, and streaming sources by leveraging the Satoru API.
 
-// Helper function to capitalize words
-function capitalizeWords(str) {
-    return str.replace(/\b\w/g, char => char.toUpperCase());
-}
+## Features
 
-// Helper function to format season number
-function formatSeasonNumber(title) {
-    // Convert "2nd season", "3rd season", etc. to "Season 2", "Season 3"
-    return title
-        .replace(/(\d+)(?:st|nd|rd|th)[-\s]+season/i, 'Season $1')
-        .replace(/season[-\s]+(\d+)/i, 'Season $1');
-}
+- Search anime by title
+- Get episodes by anime ID
+- Get streaming sources for specific episodes
+- Support for HiAnime ID format
+- Intelligent search with fallback mechanism
+- Title formatting and cleaning
 
-// Helper function to clean search query
-function cleanSearchQuery(query) {
-    return query
-        .replace(/-tv\b|\btv\b/gi, '')  // Remove 'tv' or '-tv' keyword
-        .replace(/\s+/g, ' ')           // Replace multiple spaces with single space
-        .trim();                        // Remove leading/trailing spaces
-}
+## Installation
 
-// Helper function to find best match
-function findBestMatch(results, searchTitle) {
-    // Convert search title to lowercase for comparison
-    const searchTitleLower = searchTitle.toLowerCase();
-    const searchWords = searchTitleLower.split(' ');
+1. Clone the repository:
 
-    // Find the result with the most matching words
-    let bestMatch = results[0];
-    let highestMatchCount = 0;
+```bash
+git clone <repository-url>
+cd anime-api
+```
 
-    results.forEach(result => {
-        const resultTitle = result.title.replace(/-/g, ' ').toLowerCase();
-        const matchCount = searchWords.filter(word => resultTitle.includes(word)).length;
+2. Install dependencies:
 
-        if (matchCount > highestMatchCount) {
-            highestMatchCount = matchCount;
-            bestMatch = result;
-        }
-    });
+```bash
+npm install
+```
 
-    return bestMatch;
-}
+3. Start the server:
 
-// Helper function to search with fallback
-async function searchWithFallback(query, originalTitle) {
-    const response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
-    
-    if (response.data.success && response.data.data.results.length > 0) {
-        // Find the best matching result
-        const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-        response.data.data.results = [bestMatch]; // Replace results with best match
-        return response;
-    }
+```bash
+npm start
+```
 
-    // If no results and query has more than 2 words, try with first 2 words
-    const words = query.split(' ');
-    if (words.length > 2) {
-        const shortQuery = words.slice(0, 2).join(' ');
-        const fallbackResponse = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
-        
-        if (fallbackResponse.data.success && fallbackResponse.data.data.results.length > 0) {
-            const bestMatch = findBestMatch(fallbackResponse.data.data.results, originalTitle);
-            fallbackResponse.data.data.results = [bestMatch];
-            return fallbackResponse;
-        }
-    }
+The server will run on port 3000 by default, or you can specify a custom port using the `PORT` environment variable.
 
-    return response;
-}
+## API Endpoints
 
-// Helper function to extract title from HiAnime ID
-function extractTitleFromHiAnimeId(hiAnimeId) {
-    // First remove the numeric ID at the end
-    const withoutId = hiAnimeId.replace(/-\d+$/, '');
-    
-    // Convert hyphens to spaces and clean
-    let cleanedTitle = withoutId.split('-').join(' ');
-    
-    // Remove TV
-    cleanedTitle = cleanSearchQuery(cleanedTitle);
-    
-    // Format the season number
-    cleanedTitle = formatSeasonNumber(cleanedTitle);
-    
-    // Capitalize words
-    cleanedTitle = capitalizeWords(cleanedTitle);
-    
-    return cleanedTitle;
-}
+### Health Check
+```
+GET /
+```
+Returns the API status.
 
-// Helper function to extract episode number from URL
-function extractEpisodeInfo(hiAnimeId) {
-    const match = hiAnimeId.match(/(.*)-episode-(\d+)$/);
-    if (!match) return null;
-    return {
-        animeId: match[1],
-        episodeNumber: parseInt(match[2])
-    };
-}
+### Search Anime
+```
+GET /api/search?query=<anime-title>
+```
+Example: `/api/search?query=blue-lock-season-2-19318`
 
-// Search anime endpoint with direct episode return
-router.get('/search', async (req, res) => {
-    try {
-        let { query } = req.query;
+### Get Episodes by ID
+```
+GET /api/:id
+```
+Example: `/api/blue-lock-season-2-19318`
 
-        if (!query) {
-            return res.status(400).json({
-                success: false,
-                message: 'Search query is required'
-            });
-        }
+### Get Streaming Sources
+```
+GET /api/sources/:id?ep=<episode-number>
+```
+Example: `/api/sources/blue-lock-season-2-19318?ep=1`
 
-        if (query.match(/-\d+$/)) {
-            query = extractTitleFromHiAnimeId(query);
-        } else {
-            query = cleanSearchQuery(query);
-            query = capitalizeWords(query);
-        }
-        
-        const searchResponse = await searchWithFallback(query, query);
+Alternative format:
+```
+GET /api/sources/:id-episode-<number>
+```
+Example: `/api/sources/blue-lock-season-2-19318-episode-1`
 
-        if (searchResponse.data.success && searchResponse.data.data.results.length > 0) {
-            const result = searchResponse.data.data.results[0];
-            const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
-            
-            return res.json({
-                success: true,
-                data: {
-                    id: result.id,
-                    title: result.title,
-                    episodes: episodesResponse.data.data.episodes
-                }
-            });
-        }
+## Response Formats
 
-        return res.json({
-            success: false,
-            message: 'No episodes found'
-        });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error fetching episodes',
-            error: error.message
-        });
-    }
-});
-
-// Get episodes by anime ID endpoint
-router.get('/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        
-        // If the ID is a HiAnime ID, extract the title and search for it
-        if (id.match(/-\d+$/)) {
-            const title = extractTitleFromHiAnimeId(id);
-            const searchResponse = await searchWithFallback(title, title);
-            
-            if (searchResponse.data.success && searchResponse.data.data.results.length > 0) {
-                const result = searchResponse.data.data.results[0];
-                const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
-                return res.json({
-                    success: true,
-                    data: {
-                        id: result.id,
-                        title: result.title,
-                        episodes: episodesResponse.data.data.episodes
-                    }
-                });
+### Search & Episodes Response
+```json
+{
+    "success": true,
+    "data": {
+        "id": 112,
+        "title": "Anime Title",
+        "episodes": [
+            {
+                "id": "123",
+                "number": 1,
+                "title": "Episode Title",
+                "japaneseTitle": "Japanese Title"
             }
-            
-            return res.status(404).json({
-                success: false,
-                message: 'Anime not found'
-            });
-        }
-
-        const response = await axios.get(`${BASE_URL}/api/episodes/${id}`);
-        return res.json({
-            success: true,
-            data: {
-                id: parseInt(id),
-                episodes: response.data.data.episodes
-            }
-        });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error fetching episodes',
-            error: error.message
-        });
+        ]
     }
-});
+}
+```
 
-// New endpoint for streaming sources
-router.get('/sources/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const episodeNumber = parseInt(req.query.ep);
-
-        // If no episode number, treat it as the -episode-X format
-        if (!episodeNumber) {
-            const episodeInfo = extractEpisodeInfo(id);
-            if (episodeInfo) {
-                // Use existing endpoint logic
-                const title = extractTitleFromHiAnimeId(episodeInfo.animeId);
-                const searchResponse = await searchWithFallback(title, title);
-                
-                if (!searchResponse.data.success || !searchResponse.data.data.results.length) {
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Anime not found'
-                    });
-                }
-
-                const result = searchResponse.data.data.results[0];
-                const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
-
-                // Find the matching episode
-                const episode = episodesResponse.data.data.episodes.find(
-                    ep => ep.number === episodeInfo.episodeNumber
-                );
-
-                if (!episode) {
-                    return res.status(404).json({
-                        success: false,
-                        message: 'Episode not found'
-                    });
-                }
-
-                // Get streaming sources
-                const sourcesResponse = await axios.get(
-                    `${BASE_URL}/api/sources/${result.title}/${episode.id}`
-                );
-
-                return res.json({
-                    success: true,
-                    data: {
-                        id: result.id,
-                        title: result.title,
-                        episode: {
-                            number: episode.number,
-                            title: episode.title,
-                            japaneseTitle: episode.japaneseTitle
-                        },
-                        sources: sourcesResponse.data.data
-                    }
-                });
-            }
-            return res.status(400).json({
-                success: false,
-                message: 'Episode number required. Use: ?ep={number}'
-            });
-        }
-
-        // Get the anime info
-        const title = extractTitleFromHiAnimeId(id);
-        const searchResponse = await searchWithFallback(title, title);
-
-        if (!searchResponse.data.success || !searchResponse.data.data.results.length) {
-            return res.status(404).json({
-                success: false,
-                message: 'Anime not found'
-            });
-        }
-
-        const result = searchResponse.data.data.results[0];
-        const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
-
-        // Find the matching episode
-        const episode = episodesResponse.data.data.episodes.find(
-            ep => ep.number === episodeNumber
-        );
-
-        if (!episode) {
-            return res.status(404).json({
-                success: false,
-                message: 'Episode not found'
-            });
-        }
-
-        // Get streaming sources
-        const sourcesResponse = await axios.get(
-            `${BASE_URL}/api/sources/${result.title}/${episode.id}`
-        );
-
-        return res.json({
-            success: true,
-            data: {
-                id: result.id,
-                title: result.title,
-                episode: {
-                    number: episode.number,
-                    title: episode.title,
-                    japaneseTitle: episode.japaneseTitle
-                },
-                sources: sourcesResponse.data.data
-            }
-        });
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            message: 'Error fetching sources',
-            error: error.message
-        });
+### Streaming Sources Response
+```json
+{
+    "success": true,
+    "data": {
+        "id": 112,
+        "title": "Anime Title",
+        "episode": {
+            "number": 1,
+            "title": "Episode Title",
+            "japaneseTitle": "Japanese Title"
+        },
+        "sources": [
+            // Streaming sources
+        ]
     }
-});
+}
+```
 
-module.exports = router;
+## Error Responses
+```json
+{
+    "success": false,
+    "message": "Error description",
+    "error": "Detailed error message (if applicable)"
+}
+```
+
+## Features
+
+### Smart Search
+- Intelligent title matching
+- Fallback search for complex queries
+- Automatic title cleaning and formatting
+
+### Title Processing
+- Proper capitalization
+- Season number formatting (e.g., "2nd season" → "Season 2")
+- TV tag removal
+- Hyphen handling
+
+## Dependencies
+
+- Express.js
+- Axios
+
+## Environment Variables
+
+- `PORT`: Server port (default: 3000)
+
+## Development
+
+To run the server in development mode:
+```bash
+npm run dev
+```
+
+## Deploy on Vercel
+
+1. Push to GitHub
+2. Import to Vercel
+3. Deploy
+
+## Built With
+
+- Node.js
+- Express
+- Axios
+- Vercel for deployment
+
+## Credits
+
+Data provided by [Satoru API](https://satoru-flame.vercel.app/)
+
+## License
+
+[Add your license here]
+
+## Contributing
+
+[Add contribution guidelines here]
