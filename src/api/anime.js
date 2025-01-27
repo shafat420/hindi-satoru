@@ -95,6 +95,16 @@ function extractTitleFromHiAnimeId(hiAnimeId) {
     return cleanedTitle;
 }
 
+// Helper function to extract episode number from URL
+function extractEpisodeInfo(hiAnimeId) {
+    const match = hiAnimeId.match(/(.*)-episode-(\d+)$/);
+    if (!match) return null;
+    return {
+        animeId: match[1],
+        episodeNumber: parseInt(match[2])
+    };
+}
+
 // Search anime endpoint with direct episode return
 router.get('/search', async (req, res) => {
     try {
@@ -184,6 +194,120 @@ router.get('/:id', async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Error fetching episodes',
+            error: error.message
+        });
+    }
+});
+
+// New endpoint for streaming sources
+router.get('/sources/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const episodeNumber = parseInt(req.query.ep);
+
+        // If no episode number, treat it as the -episode-X format
+        if (!episodeNumber) {
+            const episodeInfo = extractEpisodeInfo(id);
+            if (episodeInfo) {
+                // Use existing endpoint logic
+                const title = extractTitleFromHiAnimeId(episodeInfo.animeId);
+                const searchResponse = await searchWithFallback(title, title);
+                
+                if (!searchResponse.data.success || !searchResponse.data.data.results.length) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Anime not found'
+                    });
+                }
+
+                const result = searchResponse.data.data.results[0];
+                const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
+
+                // Find the matching episode
+                const episode = episodesResponse.data.data.episodes.find(
+                    ep => ep.number === episodeInfo.episodeNumber
+                );
+
+                if (!episode) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Episode not found'
+                    });
+                }
+
+                // Get streaming sources
+                const sourcesResponse = await axios.get(
+                    `${BASE_URL}/api/sources/${result.title}/${episode.id}`
+                );
+
+                return res.json({
+                    success: true,
+                    data: {
+                        id: result.id,
+                        title: result.title,
+                        episode: {
+                            number: episode.number,
+                            title: episode.title,
+                            japaneseTitle: episode.japaneseTitle
+                        },
+                        sources: sourcesResponse.data.data
+                    }
+                });
+            }
+            return res.status(400).json({
+                success: false,
+                message: 'Episode number required. Use: ?ep={number}'
+            });
+        }
+
+        // Get the anime info
+        const title = extractTitleFromHiAnimeId(id);
+        const searchResponse = await searchWithFallback(title, title);
+
+        if (!searchResponse.data.success || !searchResponse.data.data.results.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'Anime not found'
+            });
+        }
+
+        const result = searchResponse.data.data.results[0];
+        const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
+
+        // Find the matching episode
+        const episode = episodesResponse.data.data.episodes.find(
+            ep => ep.number === episodeNumber
+        );
+
+        if (!episode) {
+            return res.status(404).json({
+                success: false,
+                message: 'Episode not found'
+            });
+        }
+
+        // Get streaming sources
+        const sourcesResponse = await axios.get(
+            `${BASE_URL}/api/sources/${result.title}/${episode.id}`
+        );
+
+        return res.json({
+            success: true,
+            data: {
+                id: result.id,
+                title: result.title,
+                episode: {
+                    number: episode.number,
+                    title: episode.title,
+                    japaneseTitle: episode.japaneseTitle
+                },
+                sources: sourcesResponse.data.data
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Error fetching sources',
             error: error.message
         });
     }
