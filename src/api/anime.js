@@ -20,9 +20,10 @@ function formatSeasonNumber(title) {
 // Helper function to clean search query
 function cleanSearchQuery(query) {
     return query
-        .replace(/-tv\b|\btv\b/gi, '')  // Remove 'tv' or '-tv' keyword
-        .replace(/\s+/g, ' ')           // Replace multiple spaces with single space
-        .trim();                        // Remove leading/trailing spaces
+        .replace(/-tv\b|\btv\b/gi, '')     // Remove 'tv' or '-tv' keyword
+        .replace(/worlds/gi, "world's")     // Replace 'worlds' with "world's"
+        .replace(/\s+/g, ' ')              // Replace multiple spaces with single space
+        .trim();                           // Remove leading/trailing spaces
 }
 
 // Helper function to find best match
@@ -53,13 +54,24 @@ async function searchWithFallback(query, originalTitle) {
     const response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
     
     if (response.data.success && response.data.data.results.length > 0) {
-        // Find the best matching result
         const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-        response.data.data.results = [bestMatch]; // Replace results with best match
+        response.data.data.results = [bestMatch];
         return response;
     }
 
-    // If no results and query has more than 2 words, try with first 2 words
+    // Try with "World's" if "Worlds" is in the query
+    if (query.toLowerCase().includes('worlds')) {
+        const modifiedQuery = query.replace(/worlds/gi, "world's");
+        const apostropheResponse = await axios.get(`${BASE_URL}/api/search?query=${modifiedQuery}`);
+        
+        if (apostropheResponse.data.success && apostropheResponse.data.data.results.length > 0) {
+            const bestMatch = findBestMatch(apostropheResponse.data.data.results, originalTitle);
+            apostropheResponse.data.data.results = [bestMatch];
+            return apostropheResponse;
+        }
+    }
+
+    // If still no results and query has more than 2 words, try with first 2 words
     const words = query.split(' ');
     if (words.length > 2) {
         const shortQuery = words.slice(0, 2).join(' ');
@@ -158,7 +170,6 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         
-        // If the ID is a HiAnime ID, extract the title and search for it
         if (id.match(/-\d+$/)) {
             const title = extractTitleFromHiAnimeId(id);
             const searchResponse = await searchWithFallback(title, title);
