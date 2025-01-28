@@ -71,10 +71,10 @@ async function searchWithFallback(query, originalTitle) {
         }
     }
 
-    // If still no results and query has more than 2 words, try with first 2 words
+    // If still no results, try with first word only
     const words = query.split(' ');
-    if (words.length > 2) {
-        const shortQuery = words.slice(0, 2).join(' ');
+    if (words.length > 1) {
+        const shortQuery = words[0];  // Just take the first word
         const fallbackResponse = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
         
         if (fallbackResponse.data.success && fallbackResponse.data.data.results.length > 0) {
@@ -121,8 +121,10 @@ function extractEpisodeInfo(hiAnimeId) {
 router.get('/search', async (req, res) => {
     try {
         let { query } = req.query;
+        console.log(`\n📥 Search request received: "${query}"`);
 
         if (!query) {
+            console.log(`❌ Error: No query provided`);
             return res.status(400).json({
                 success: false,
                 message: 'Search query is required'
@@ -130,17 +132,22 @@ router.get('/search', async (req, res) => {
         }
 
         if (query.match(/-\d+$/)) {
+            console.log(`🔄 Converting HiAnime ID to title`);
             query = extractTitleFromHiAnimeId(query);
         } else {
             query = cleanSearchQuery(query);
             query = capitalizeWords(query);
         }
+        console.log(`🔍 Processed query: "${query}"`);
         
         const searchResponse = await searchWithFallback(query, query);
 
         if (searchResponse.data.success && searchResponse.data.data.results.length > 0) {
             const result = searchResponse.data.data.results[0];
+            console.log(`✅ Found anime: "${result.title}" (ID: ${result.id})`);
+            
             const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
+            console.log(`📺 Retrieved ${episodesResponse.data.data.episodes.length} episodes`);
             
             return res.json({
                 success: true,
@@ -152,11 +159,13 @@ router.get('/search', async (req, res) => {
             });
         }
 
+        console.log(`❌ No episodes found for: "${query}"`);
         return res.json({
             success: false,
             message: 'No episodes found'
         });
     } catch (error) {
+        console.error(`❌ Search error:`, error.message);
         return res.status(500).json({
             success: false,
             message: 'Error fetching episodes',
@@ -169,14 +178,22 @@ router.get('/search', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`\n📥 Episode request for ID: "${id}"`);
         
         if (id.match(/-\d+$/)) {
+            console.log(`🔄 Converting HiAnime ID to title`);
             const title = extractTitleFromHiAnimeId(id);
+            console.log(`🔍 Extracted title: "${title}"`);
+            
             const searchResponse = await searchWithFallback(title, title);
             
             if (searchResponse.data.success && searchResponse.data.data.results.length > 0) {
                 const result = searchResponse.data.data.results[0];
+                console.log(`✅ Found anime: "${result.title}" (ID: ${result.id})`);
+                
                 const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
+                console.log(`📺 Retrieved ${episodesResponse.data.data.episodes.length} episodes`);
+                
                 return res.json({
                     success: true,
                     data: {
@@ -187,13 +204,17 @@ router.get('/:id', async (req, res) => {
                 });
             }
             
+            console.log(`❌ Anime not found for: "${title}"`);
             return res.status(404).json({
                 success: false,
                 message: 'Anime not found'
             });
         }
 
+        console.log(`🔍 Fetching episodes directly for ID: ${id}`);
         const response = await axios.get(`${BASE_URL}/api/episodes/${id}`);
+        console.log(`📺 Retrieved ${response.data.data.episodes.length} episodes`);
+        
         return res.json({
             success: true,
             data: {
@@ -202,6 +223,7 @@ router.get('/:id', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error(`❌ Episode fetch error:`, error.message);
         return res.status(500).json({
             success: false,
             message: 'Error fetching episodes',
