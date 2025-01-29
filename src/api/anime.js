@@ -137,6 +137,46 @@ function findBestMatch(results, searchTitle) {
 
 // Helper function to search with fallback
 async function searchWithFallback(query, originalTitle) {
+    // Try with full query first
+    let response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
+    
+    // If no results, try with shorter versions of the title
+    if (!response.data.success || !response.data.data.results.length) {
+        // Split into words and remove common words
+        const words = query.split(' ').filter(word => {
+            const lowerWord = word.toLowerCase();
+            return !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc'].includes(lowerWord);
+        });
+
+        // Try with first 3 meaningful words
+        if (words.length > 3) {
+            const shortQuery = words.slice(0, 3).join(' ');
+            response = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
+            
+            if (response.data.success && response.data.data.results.length > 0) {
+                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
+                if (bestMatch) {
+                    response.data.data.results = [bestMatch];
+                    return response;
+                }
+            }
+        }
+
+        // If still no results, try with just the first 2 words
+        if (words.length > 2) {
+            const shortQuery = words.slice(0, 2).join(' ');
+            response = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
+            
+            if (response.data.success && response.data.data.results.length > 0) {
+                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
+                if (bestMatch) {
+                    response.data.data.results = [bestMatch];
+                    return response;
+                }
+            }
+        }
+    }
+
     // Special case for Shangri-La
     if (query.toLowerCase().includes('shangri')) {
         const shanghriQuery = 'shangri';
@@ -167,19 +207,10 @@ async function searchWithFallback(query, originalTitle) {
         }
     }
 
-    // Regular search logic
-    const response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
-    
-    if (response.data.success && response.data.data.results.length > 0) {
-        const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-        if (bestMatch) {
-            response.data.data.results = [bestMatch];
-            return response;
-        }
+    if (!response.data.success || !response.data.data.results.length) {
+        response.data.data.results = [];
     }
-
-    // If no matches found, return empty results
-    response.data.data.results = [];
+    
     return response;
 }
 
@@ -242,7 +273,6 @@ router.get('/search', async (req, res) => {
 
         if (searchResponse.data.success && searchResponse.data.data.results.length > 0) {
             const result = searchResponse.data.data.results[0];
-            
             const episodesResponse = await axios.get(`${BASE_URL}/api/episodes/${result.id}`);
             
             return res.json({
