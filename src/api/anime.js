@@ -60,6 +60,17 @@ function stringSimilarity(str1, str2) {
 function findBestMatch(results, searchTitle) {
     const searchTitleLower = searchTitle.toLowerCase().replace(/-/g, ' ').trim();
     
+    // Special case for KamiKatsu
+    if (searchTitleLower.includes('kamikatsu')) {
+        const kamikatsuMatch = results.find(result => {
+            const title = result.title.toLowerCase();
+            return title.includes('kamikatsu') || 
+                   title.includes('kami katsu') ||
+                   title.includes('working for god');
+        });
+        if (kamikatsuMatch) return kamikatsuMatch;
+    }
+
     // Special case for Makeine
     if (searchTitleLower.includes('makeine') || searchTitleLower.includes('losing heroines')) {
         const makeineMatch = results.find(result => {
@@ -149,6 +160,27 @@ function findBestMatch(results, searchTitle) {
 
 // Helper function to search with fallback
 async function searchWithFallback(query, originalTitle) {
+    // Special case for KamiKatsu
+    if (query.toLowerCase().includes('kamikatsu')) {
+        const variations = [
+            'kamikatsu',
+            'kami katsu',
+            'working for god'
+        ];
+        
+        for (const variation of variations) {
+            const response = await axios.get(`${BASE_URL}/api/search?query=${variation}`);
+            
+            if (response.data.success && response.data.data.results.length > 0) {
+                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
+                if (bestMatch) {
+                    response.data.data.results = [bestMatch];
+                    return response;
+                }
+            }
+        }
+    }
+
     // Special case for Makeine - try this first
     if (query.toLowerCase().includes('makeine') || query.toLowerCase().includes('losing heroines')) {
         const variations = [
