@@ -60,6 +60,18 @@ function stringSimilarity(str1, str2) {
 function findBestMatch(results, searchTitle) {
     const searchTitleLower = searchTitle.toLowerCase().replace(/-/g, ' ').trim();
     
+    // Special case for Makeine
+    if (searchTitleLower.includes('makeine') || searchTitleLower.includes('losing heroines')) {
+        const makeineMatch = results.find(result => {
+            const title = result.title.toLowerCase();
+            return title.includes('makein') || 
+                   title.includes('make in') ||
+                   title.includes('makenai') ||
+                   title.includes('losing heroines');
+        });
+        if (makeineMatch) return makeineMatch;
+    }
+
     // Special case for Shangri-La
     if (searchTitleLower.includes('shangri')) {
         const shanghriMatch = results.find(result => {
@@ -137,35 +149,17 @@ function findBestMatch(results, searchTitle) {
 
 // Helper function to search with fallback
 async function searchWithFallback(query, originalTitle) {
-    // Try with full query first
-    let response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
-    
-    // If no results, try with shorter versions of the title
-    if (!response.data.success || !response.data.data.results.length) {
-        // Split into words and remove common words
-        const words = query.split(' ').filter(word => {
-            const lowerWord = word.toLowerCase();
-            return !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc'].includes(lowerWord);
-        });
-
-        // Try with first 3 meaningful words
-        if (words.length > 3) {
-            const shortQuery = words.slice(0, 3).join(' ');
-            response = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
-            
-            if (response.data.success && response.data.data.results.length > 0) {
-                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-                if (bestMatch) {
-                    response.data.data.results = [bestMatch];
-                    return response;
-                }
-            }
-        }
-
-        // If still no results, try with just the first 2 words
-        if (words.length > 2) {
-            const shortQuery = words.slice(0, 2).join(' ');
-            response = await axios.get(`${BASE_URL}/api/search?query=${shortQuery}`);
+    // Special case for Makeine - try this first
+    if (query.toLowerCase().includes('makeine') || query.toLowerCase().includes('losing heroines')) {
+        const variations = [
+            'makeine',
+            'makenai',
+            'make in',
+            'losing heroines'
+        ];
+        
+        for (const variation of variations) {
+            const response = await axios.get(`${BASE_URL}/api/search?query=${variation}`);
             
             if (response.data.success && response.data.data.results.length > 0) {
                 const bestMatch = findBestMatch(response.data.data.results, originalTitle);
@@ -176,7 +170,10 @@ async function searchWithFallback(query, originalTitle) {
             }
         }
     }
-
+    
+    // Try with full query if special case didn't work
+    let response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
+    
     // Special case for Shangri-La
     if (query.toLowerCase().includes('shangri')) {
         const shanghriQuery = 'shangri';
