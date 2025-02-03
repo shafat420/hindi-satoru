@@ -46,25 +46,25 @@ Returns the API status.
 ```
 GET /api/search?query=<anime-title>
 ```
-Example: `/api/search?query=blue-lock-season-2-19318`
+Example: `/api/search?query=wind-breaker-19136`
 
 ### Get Episodes by ID
 ```
 GET /api/:id
 ```
-Example: `/api/blue-lock-season-2-19318`
+Example: `/api/wind-breaker-19136`
 
 ### Get Streaming Sources
 ```
 GET /api/sources/:id?ep=<episode-number>
 ```
-Example: `/api/sources/blue-lock-season-2-19318?ep=1`
+Example: `/api/sources/wind-breaker-19136?ep=1`
 
 Alternative format:
 ```
 GET /api/sources/:id-episode-<number>
 ```
-Example: `/api/sources/blue-lock-season-2-19318-episode-1`
+Example: `/api/sources/wind-breaker-19136-episode-1`
 
 ## Response Formats
 
