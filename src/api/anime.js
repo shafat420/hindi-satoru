@@ -60,187 +60,257 @@ function stringSimilarity(str1, str2) {
 function findBestMatch(results, searchTitle) {
     const searchTitleLower = searchTitle.toLowerCase().replace(/-/g, ' ').trim();
     
-    // Special case for KamiKatsu
-    if (searchTitleLower.includes('kamikatsu')) {
-        const kamikatsuMatch = results.find(result => {
-            const title = result.title.toLowerCase();
-            return title.includes('kamikatsu') || 
-                   title.includes('kami katsu') ||
-                   title.includes('working for god');
-        });
-        if (kamikatsuMatch) return kamikatsuMatch;
-    }
-
-    // Special case for Makeine
-    if (searchTitleLower.includes('makeine') || searchTitleLower.includes('losing heroines')) {
-        const makeineMatch = results.find(result => {
-            const title = result.title.toLowerCase();
-            return title.includes('makein') || 
-                   title.includes('make in') ||
-                   title.includes('makenai') ||
-                   title.includes('losing heroines');
-        });
-        if (makeineMatch) return makeineMatch;
-    }
-
-    // Special case for Shangri-La
-    if (searchTitleLower.includes('shangri')) {
-        const shanghriMatch = results.find(result => {
-            const title = result.title.toLowerCase();
-            return title.includes('shangri');
-        });
-        if (shanghriMatch) return shanghriMatch;
-    }
-
-    // Special case for Gods' Game We Play
-    if (searchTitleLower.includes('gods game') || searchTitleLower.includes('god game')) {
-        const godsGameMatch = results.find(result => {
-            const title = result.title.toLowerCase();
-            return (title.includes('gods game') || 
-                   title.includes('god game') || 
-                   title.includes('gods\' game') ||
-                   title.includes("god's game"));
-        });
-        if (godsGameMatch) return godsGameMatch;
-    }
-
-    // Try to find exact ID match first
-    const idMatch = results.find(result => {
-        // Remove numeric suffix from both titles for comparison
-        const resultBase = result.title.toLowerCase().replace(/-\d+$/, '');
-        const searchBase = searchTitleLower.replace(/-\d+$/, '');
-        return resultBase === searchBase;
+    // Extract season/arc information from search title
+    const seasonMatch = searchTitleLower.match(/(?:season|s)\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season/i);
+    const arcMatch = searchTitleLower.match(/(?:arc|saga|part|village|district)/i);
+    
+    // First try exact matches with season/arc consideration
+    const exactMatches = results.filter(result => {
+        const title = result.title.toLowerCase().replace(/-/g, ' ');
+        
+        // If searching for a specific season
+        if (seasonMatch) {
+            const seasonNum = seasonMatch[1] || seasonMatch[2];
+            return title.includes(`season ${seasonNum}`) || 
+                   title.includes(`s${seasonNum}`) ||
+                   title.includes(`${seasonNum}rd season`) ||
+                   title.includes(`${seasonNum}th season`) ||
+                   title.includes(`${seasonNum}nd season`) ||
+                   title.endsWith(`-${seasonNum}`);
+        }
+        
+        // If searching for a specific arc
+        if (arcMatch) {
+            const arcName = arcMatch[0].toLowerCase();
+            return title.includes(arcName);
+        }
+        
+        return title === searchTitleLower;
     });
     
-    if (idMatch) {
-        return idMatch;
+    if (exactMatches.length > 0) {
+        return exactMatches[0];
     }
 
-    // Try to find exact title match
-    const exactMatch = results.find(result => {
-        const resultTitle = result.title.toLowerCase().replace(/-/g, ' ');
-        return resultTitle === searchTitleLower;
+    // Try to match by significant words
+    const significantWords = searchTitleLower.split(' ')
+        .filter(word => word.length > 2 && 
+            !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc', 'saga', 'part'].includes(word));
+    
+    const wordMatches = results.filter(result => {
+        const title = result.title.toLowerCase().replace(/-/g, ' ');
+        return significantWords.every(word => title.includes(word));
     });
     
-    if (exactMatch) {
-        return exactMatch;
+    if (wordMatches.length > 0) {
+        // Sort by similarity to get best match
+        return wordMatches.sort((a, b) => {
+            const simA = stringSimilarity(a.title.toLowerCase(), searchTitleLower);
+            const simB = stringSimilarity(b.title.toLowerCase(), searchTitleLower);
+            return simB - simA;
+        })[0];
     }
 
-    // For titles with multiple results, prefer the shorter/original title
-    const baseMatches = results.filter(result => {
-        const resultTitle = result.title.toLowerCase().replace(/-/g, ' ');
-        return resultTitle.startsWith(searchTitleLower);
-    });
+    // Special cases for specific titles
+    const specialCases = {
+        'kamikatsu': ['kamikatsu', 'kami katsu', 'working for god'],
+        'makeine': ['makein', 'make in', 'makenai', 'losing heroines'],
+        'shangri': ['shangri'],
+        'god game': ['gods game', 'god game', 'gods\' game', "god's game"],
+        'demon slayer': {
+            'swordsmith': ['swordsmith', 'katanakaji'],
+            'entertainment': ['entertainment', 'yuukaku'],
+            'mugen': ['mugen', 'infinity']
+        }
+    };
 
-    if (baseMatches.length > 0) {
-        // Sort by length and return the shortest (original) title
-        return baseMatches.sort((a, b) => a.title.length - b.title.length)[0];
+    // Check special cases
+    for (const [key, variations] of Object.entries(specialCases)) {
+        if (searchTitleLower.includes(key)) {
+            if (typeof variations === 'object' && !Array.isArray(variations)) {
+                // Handle nested cases like Demon Slayer
+                for (const [arcKey, arcVariations] of Object.entries(variations)) {
+                    if (searchTitleLower.includes(arcKey)) {
+                        const match = results.find(result => {
+                            const title = result.title.toLowerCase();
+                            return arcVariations.some(v => title.includes(v));
+                        });
+                        if (match) return match;
+                    }
+                }
+            } else {
+                const match = results.find(result => {
+                    const title = result.title.toLowerCase();
+                    return variations.some(v => title.includes(v));
+                });
+                if (match) return match;
+            }
+        }
     }
 
-    // If still no match, try partial matches
-    const searchWords = searchTitleLower.split(' ')
-        .filter(word => !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'as'].includes(word));
-    
-    const firstFewWords = searchWords.slice(0, 3).join(' ');
-
-    const potentialMatches = results.filter(result => {
-        const title = result.title.replace(/-/g, ' ').toLowerCase();
-        return title.includes(firstFewWords) || 
-               title.includes(firstFewWords.replace(/'/g, '')) ||
-               title.includes(firstFewWords.replace(/'/g, 's'));
+    // If still no match, try partial matches with first few words
+    const firstFewWords = significantWords.slice(0, 2).join(' ');
+    const partialMatches = results.filter(result => {
+        const title = result.title.toLowerCase().replace(/-/g, ' ');
+        return title.includes(firstFewWords);
     });
 
-    if (potentialMatches.length > 0) {
-        // Sort by length and return the shortest (original) title
-        return potentialMatches.sort((a, b) => a.title.length - b.title.length)[0];
+    if (partialMatches.length > 0) {
+        // Sort by similarity and length
+        return partialMatches.sort((a, b) => {
+            const simA = stringSimilarity(a.title.toLowerCase(), searchTitleLower);
+            const simB = stringSimilarity(b.title.toLowerCase(), searchTitleLower);
+            if (Math.abs(simA - simB) < 0.1) {
+                // If similarity is close, prefer shorter titles
+                return a.title.length - b.title.length;
+            }
+            return simB - simA;
+        })[0];
     }
 
     return null;
 }
 
+// Helper function to verify title match
+function verifyTitleMatch(result, searchTitle) {
+    const resultTitle = result.title.toLowerCase().replace(/-/g, ' ');
+    const searchTitleLower = searchTitle.toLowerCase().replace(/-/g, ' ');
+
+    // Check for season numbers
+    const searchSeasonMatch = searchTitleLower.match(/(?:season|s)\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season/i);
+    const resultSeasonMatch = resultTitle.match(/(?:season|s)\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season/i);
+    
+    if (searchSeasonMatch && resultSeasonMatch) {
+        const searchSeasonNum = searchSeasonMatch[1] || searchSeasonMatch[2];
+        const resultSeasonNum = resultSeasonMatch[1] || resultSeasonMatch[2];
+        if (searchSeasonNum !== resultSeasonNum) {
+            return false;
+        }
+    }
+
+    // Check for arc names
+    const arcKeywords = ['swordsmith', 'entertainment', 'mugen', 'infinity', 'village', 'district'];
+    const searchArcWord = arcKeywords.find(word => searchTitleLower.includes(word));
+    if (searchArcWord && !resultTitle.includes(searchArcWord)) {
+        return false;
+    }
+
+    // Split titles into words and compare significant words
+    const searchWords = searchTitleLower.split(' ')
+        .filter(word => word.length > 2 && 
+            !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc', 'saga', 'part'].includes(word));
+    
+    const resultWords = resultTitle.split(' ')
+        .filter(word => word.length > 2 && 
+            !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc', 'saga', 'part'].includes(word));
+
+    // Check if all significant words from search are in result
+    return searchWords.every(word => resultWords.some(rWord => rWord.includes(word)));
+}
+
 // Helper function to search with fallback
 async function searchWithFallback(query, originalTitle) {
-    // Special case for KamiKatsu
-    if (query.toLowerCase().includes('kamikatsu')) {
-        const variations = [
-            'kamikatsu',
-            'kami katsu',
-            'working for god'
-        ];
-        
-        for (const variation of variations) {
-            const response = await axios.get(`${BASE_URL}/api/search?query=${variation}`);
+    async function trySearch(searchQuery) {
+        const response = await axios.get(`${BASE_URL}/api/search?query=${searchQuery}`);
+        if (response.data.success && response.data.data.results.length > 0) {
+            // Verify each result
+            const verifiedResults = response.data.data.results.filter(result => 
+                verifyTitleMatch(result, originalTitle)
+            );
+            if (verifiedResults.length > 0) {
+                response.data.data.results = verifiedResults;
+                return response;
+            }
+        }
+        return null;
+    }
+
+    // Try with full query first
+    let response = await trySearch(query);
+    if (response) {
+        return response;
+    }
+
+    // If full query fails, try with first two meaningful words
+    const words = query.split(/\s+/).filter(word => 
+        word.length > 2 && 
+        !['the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'of', 'as', 'arc', 'saga', 'part'].includes(word.toLowerCase())
+    );
+
+    if (words.length >= 2) {
+        const shortQuery = words.slice(0, 2).join(' ');
+        response = await trySearch(shortQuery);
+        if (response) {
+            // Additional verification for season/arc specific matches
+            const results = response.data.data.results;
+            const queryLower = query.toLowerCase();
             
-            if (response.data.success && response.data.data.results.length > 0) {
-                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-                if (bestMatch) {
-                    response.data.data.results = [bestMatch];
+            // Check for season numbers
+            const seasonMatch = queryLower.match(/(?:season|s)\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season/i);
+            if (seasonMatch) {
+                const seasonNum = seasonMatch[1] || seasonMatch[2];
+                const seasonResults = results.filter(result => {
+                    const title = result.title.toLowerCase();
+                    return title.includes(`season-${seasonNum}`) || 
+                           title.includes(`s${seasonNum}`) ||
+                           title.includes(`${seasonNum}rd-season`) ||
+                           title.includes(`${seasonNum}th-season`) ||
+                           title.includes(`${seasonNum}nd-season`) ||
+                           title.endsWith(`-${seasonNum}`);
+                });
+                
+                if (seasonResults.length > 0) {
+                    response.data.data.results = [seasonResults[0]];
+                    return response;
+                }
+            }
+            
+            // Check for specific arc keywords
+            const arcKeywords = ['swordsmith', 'entertainment', 'mugen', 'infinity', 'village', 'district'];
+            const arcMatch = arcKeywords.find(keyword => queryLower.includes(keyword));
+            if (arcMatch) {
+                const arcResults = results.filter(result => 
+                    result.title.toLowerCase().includes(arcMatch)
+                );
+                
+                if (arcResults.length > 0) {
+                    response.data.data.results = [arcResults[0]];
                     return response;
                 }
             }
         }
     }
 
-    // Special case for Makeine - try this first
-    if (query.toLowerCase().includes('makeine') || query.toLowerCase().includes('losing heroines')) {
-        const variations = [
-            'makeine',
-            'makenai',
-            'make in',
-            'losing heroines'
-        ];
-        
-        for (const variation of variations) {
-            const response = await axios.get(`${BASE_URL}/api/search?query=${variation}`);
+    // If still no verified match, try with first word
+    if (words.length > 0) {
+        const firstWord = words[0];
+        response = await trySearch(firstWord);
+        if (response) {
+            // Sort by similarity and verify matches
+            const results = response.data.data.results;
+            const verifiedResults = results.filter(result => verifyTitleMatch(result, originalTitle))
+                .sort((a, b) => {
+                    const simA = stringSimilarity(a.title.toLowerCase(), query.toLowerCase());
+                    const simB = stringSimilarity(b.title.toLowerCase(), query.toLowerCase());
+                    return simB - simA;
+                });
             
-            if (response.data.success && response.data.data.results.length > 0) {
-                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-                if (bestMatch) {
-                    response.data.data.results = [bestMatch];
-                    return response;
-                }
-            }
-        }
-    }
-    
-    // Try with full query if special case didn't work
-    let response = await axios.get(`${BASE_URL}/api/search?query=${query}`);
-    
-    // Special case for Shangri-La
-    if (query.toLowerCase().includes('shangri')) {
-        const shanghriQuery = 'shangri';
-        const response = await axios.get(`${BASE_URL}/api/search?query=${shanghriQuery}`);
-        
-        if (response.data.success && response.data.data.results.length > 0) {
-            const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-            if (bestMatch) {
-                response.data.data.results = [bestMatch];
+            if (verifiedResults.length > 0) {
+                response.data.data.results = [verifiedResults[0]];
                 return response;
             }
         }
     }
 
-    // Special case for Gods' Game We Play
-    if (query.toLowerCase().includes('gods game') || query.toLowerCase().includes('god game')) {
-        const variations = ['gods game', 'god game', 'gods\' game', 'god\'s game'];
-        for (const variation of variations) {
-            const response = await axios.get(`${BASE_URL}/api/search?query=${variation}`);
-            
-            if (response.data.success && response.data.data.results.length > 0) {
-                const bestMatch = findBestMatch(response.data.data.results, originalTitle);
-                if (bestMatch) {
-                    response.data.data.results = [bestMatch];
-                    return response;
-                }
+    // If no verified matches found
+    return {
+        data: {
+            success: false,
+            data: {
+                results: []
             }
         }
-    }
-
-    if (!response.data.success || !response.data.data.results.length) {
-        response.data.data.results = [];
-    }
-    
-    return response;
+    };
 }
 
 // Helper function to extract title from HiAnime ID
